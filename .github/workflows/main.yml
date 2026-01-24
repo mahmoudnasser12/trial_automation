@@ -1,6 +1,9 @@
 name: Enforce Policy & Auto-Revert
 
-on: [push]
+on:
+  push:
+    branches-ignore:
+      - develop
 
 permissions:
   contents: write  # <--- CRITICAL: Allows the Action to push the revert
