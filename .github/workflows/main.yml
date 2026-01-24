@@ -29,89 +29,79 @@ jobs:
           import sys
           import subprocess
 
-          # 1. Get the message and split into lines
+          # --- 1. CLEAN & PARSE ---
           msg = os.environ.get("COMMIT_MSG", "")
-          lines = msg.strip().split('\n')
           
-          # Remove carriage returns if any (common in Windows commits)
-          lines = [line.strip() for line in lines]
+          # Split by newline, strip whitespace from every line, AND REMOVE EMPTY LINES
+          # This flattens "PROJ-1024 \n\n\n Fix" into ["PROJ-1024", "Fix"]
+          raw_lines = msg.split('\n')
+          content_lines = [line.strip() for line in raw_lines if line.strip()]
 
-          print(f"Analyzing {len(lines)} lines...")
-          for i, line in enumerate(lines):
-              print(f"Line {i+1}: {line}")
+          print(f"Found {len(content_lines)} blocks of content (ignoring whitespace).")
+          for i, line in enumerate(content_lines):
+              print(f"Block {i+1}: {line}")
 
-          # --- CONFIGURATION (Regex Patterns) ---
-          REGEX_TICKET = r"^[A-Z]+-[0-9]+$"       # e.g., PROJ-123
-          REGEX_VERSION = r"^v[0-9]+\.[0-9]+$"    # e.g., v1.0
+          # --- 2. CONFIGURATION ---
+          REGEX_TICKET = r"^[A-Z]+-[0-9]+$"       # Matches PROJ-123
+          REGEX_VERSION = r"^v[0-9]+\.[0-9]+$"    # Matches v1.0
           REGEX_TYPE = r"^(Feature|Bugfix|Refactor|Docs)$"
 
           errors = []
 
-          # --- VALIDATION LOGIC ---
-          # Check strict line count (Must have at least 8 lines)
-          if len(lines) < 8:
-              errors.append("Message is too short. Must be at least 8 lines.")
+          # --- 3. LOGIC (Sequence Based) ---
+          
+          # We need at least 5 blocks: Ticket, Summary, Version, Type, Description
+          if len(content_lines) < 5:
+              errors.append(f"Missing information. Found {len(content_lines)}/5 required sections.")
+              errors.append("Expected order: Ticket -> Summary -> Version -> Type -> Description")
           else:
-              # Line 1: Ticket
-              if not re.match(REGEX_TICKET, lines[0]):
-                  errors.append(f"Line 1 (Ticket): '{lines[0]}' does not match format PROJ-123")
-              
-              # Line 2: Summary (Non-empty)
-              if not lines[1]:
-                  errors.append("Line 2 (Summary): Cannot be empty")
+              # Block 1: Ticket
+              if not re.match(REGEX_TICKET, content_lines[0]):
+                  errors.append(f"1st Section (Ticket): '{content_lines[0]}' must match format PROJ-123")
 
-              # Line 3: Blank
-              if lines[2] != "":
-                  errors.append("Line 3: Must be a blank line")
+              # Block 2: Summary (Free text, just ensure it's not the Version)
+              if re.match(REGEX_VERSION, content_lines[1]):
+                  errors.append(f"2nd Section (Summary): You seem to have skipped the Summary and wrote Version '{content_lines[1]}' instead.")
 
-              # Line 4: Version
-              if not re.match(REGEX_VERSION, lines[3]):
-                  errors.append(f"Line 4 (Version): '{lines[3]}' does not match format vX.X")
+              # Block 3: Version
+              if not re.match(REGEX_VERSION, content_lines[2]):
+                  errors.append(f"3rd Section (Version): '{content_lines[2]}' must match format vX.X")
 
-              # Line 5: Blank
-              if lines[4] != "":
-                  errors.append("Line 5: Must be a blank line")
+              # Block 4: Type
+              if not re.match(REGEX_TYPE, content_lines[3]):
+                  errors.append(f"4th Section (Type): '{content_lines[3]}' is invalid. Allowed: Feature, Bugfix, Refactor, Docs")
 
-              # Line 6: Type
-              if not re.match(REGEX_TYPE, lines[5]):
-                  errors.append(f"Line 6 (Type): '{lines[5]}' is invalid. Allowed: Feature, Bugfix, Refactor, Docs")
+              # Block 5+: Description
+              # (We just check that it exists, which we did via len checks)
 
-              # Line 7: Blank
-              if lines[6] != "":
-                  errors.append("Line 7: Must be a blank line")
-
-              # Line 8: Description (Non-empty)
-              if not lines[7]:
-                  errors.append("Line 8 (Description): Cannot be empty")
-
-          # --- DECISION ---
+          # --- 4. DECISION ---
           if not errors:
-              print("✅ ACCEPTED: Commit message follows the strict template.")
+              print("✅ ACCEPTED: Commit content sequence is correct.")
               sys.exit(0)
           
-          # --- REVERT SEQUENCE ---
+          # --- 5. REVERT SEQUENCE ---
           print("\n❌ VIOLATIONS FOUND:")
           for err in errors:
               print(f" - {err}")
           
           print("\n🚨 INITIATING AUTO-REVERT...")
-
-          # Define Git Commands
+          
           commands = [
               ["git", "config", "--global", "user.name", "Policy Bot"],
               ["git", "config", "--global", "user.email", "bot@noreply.github.com"],
               ["git", "revert", "HEAD", "--no-edit"],
-              ["git", "commit", "--amend", "-m", "reverted: commit message format violation"],
+              ["git", "commit", "--amend", "-m", "reverted: format violation"],
               ["git", "push", "origin", "HEAD"]
           ]
 
-          # Execute Revert
           try:
               for cmd in commands:
                   subprocess.run(cmd, check=True)
               print("✅ REVERT COMPLETE.")
           except subprocess.CalledProcessError as e:
               print(f"CRITICAL ERROR during revert: {e}")
+          
+          sys.exit(1)
           
           # Fail the job
           sys.exit(1)
