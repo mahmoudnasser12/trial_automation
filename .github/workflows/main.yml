@@ -1,14 +1,30 @@
 name: first_workflow
-on:
-  push:
-    branches:
-      - main
+
+# 1. Trigger on push to ANY branch (removed specific branch list)
+on: [push]
 
 jobs:
   example-job:
     runs-on: ubuntu-latest
-
     steps:
+      # --- NEW GATEKEEPER STEP ---
+      - name: Check Commit Message
+        run: |
+          # Capture the commit message from the GitHub Event context
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          
+          echo "Analyzing message: $COMMIT_MSG"
+          
+          # Check if "mahmoud" is NOT present (using bash substring check)
+          # Note: This is case-sensitive. Use ${COMMIT_MSG,,} for case-insensitive.
+          if [[ "$COMMIT_MSG" != *"mahmoud"* ]]; then
+            echo "❌ REJECTED: Commit message does not contain 'mahmoud'."
+            exit 1  # Non-zero exit code fails the pipeline immediately
+          fi
+          
+          echo "✅ ACCEPTED: Identity verification passed."
+
+      # --- ORIGINAL STEPS BELOW ---
       - name: print a welcome message
         run: echo "welcome to our workflow"
 
