@@ -1,7 +1,9 @@
 import ctypes
+import sys
 
-# Load the DLL
-add_dll = ctypes.CDLL('./add.dll')
+# Load the library (DLL on Windows, SO on Linux)
+lib_name = './add.dll' if sys.platform.startswith('win') else './add.so'
+add_dll = ctypes.CDLL(lib_name)
 
 # Define the function signature
 add_dll.add.argtypes = [ctypes.c_int, ctypes.c_int]
