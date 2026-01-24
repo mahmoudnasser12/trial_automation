@@ -1,0 +1,21 @@
+#!/bin/sh
+
+# The first argument ($1) is the file containing the commit message
+MSG_FILE="$1"
+
+# Read the message from the file
+COMMIT_MSG=$(cat "$MSG_FILE")
+
+# Check if the message contains "mahmoud" (case-insensitive with grep -i)
+if ! echo "$COMMIT_MSG" | grep -iq "mahmoud"; then
+    echo "========================================================="
+    echo "⛔ COMMIT REJECTED AUTOMATICALLY"
+    echo "Reason: The commit message is missing the required tag: 'mahmoud'"
+    echo "========================================================="
+    
+    # Exit with non-zero status to block the commit
+    exit 1
+fi
+
+# If we get here, the commit is allowed
+exit 0
