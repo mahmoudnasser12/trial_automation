@@ -1,41 +1,48 @@
-name: first_workflow
+name: Enforce Policy & Auto-Revert
 
-# 1. Trigger on push to ANY branch (removed specific branch list)
 on: [push]
 
+permissions:
+  contents: write  # <--- CRITICAL: Allows the Action to push the revert
+
 jobs:
-  example-job:
+  enforce-and-revert:
     runs-on: ubuntu-latest
     steps:
-      # --- NEW GATEKEEPER STEP ---
-      - name: Check Commit Message
-        run: |
-          # Capture the commit message from the GitHub Event context
-          COMMIT_MSG="${{ github.event.head_commit.message }}"
-          
-          echo "Analyzing message: $COMMIT_MSG"
-          
-          # Check if "mahmoud" is NOT present (using bash substring check)
-          # Note: This is case-sensitive. Use ${COMMIT_MSG,,} for case-insensitive.
-          if [[ "$COMMIT_MSG" != *"mahmoud"* ]]; then
-            echo "❌ REJECTED: Commit message does not contain 'mahmoud'."
-            exit 1  # Non-zero exit code fails the pipeline immediately
-          fi
-          
-          echo "✅ ACCEPTED: Identity verification passed."
-
-      # --- ORIGINAL STEPS BELOW ---
-      - name: print a welcome message
-        run: echo "welcome to our workflow"
-
-      - name: checkout repo
+      - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # <--- CRITICAL: We need full history to perform a revert
 
-      - name: list repo files
-        run: ls -la
+      - name: Check Message & Auto-Revert if Needed
+        run: |
+          # 1. Capture the message (Case Insensitive Check)
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          echo "Analyzing commit: $COMMIT_MSG"
 
-      - name: Compile C code
-        run: gcc -shared -o add.so -fPIC add.c
+          # 2. Check if "mahmoud" is missing (grep -i = case insensitive)
+          if ! echo "$COMMIT_MSG" | grep -iq "mahmoud"; then
+            echo "❌ VIOLATION: 'mahmoud' not found in commit message."
+            echo "🚨 INITIATING AUTO-REVERT SEQUENCE..."
 
-      - name: Run tests
-        run: python test_add.py
+            # 3. Configure Git for the Bot
+            git config --global user.name "Policy Enforcer Bot"
+            git config --global user.email "bot@noreply.github.com"
+
+            # 4. Revert the current HEAD
+            # --no-edit: accept the default revert message temporarily
+            git revert HEAD --no-edit
+
+            # 5. Amend the message to your specific requirement
+            git commit --amend -m "reverted because it's per guidelines"
+
+            # 6. Push the changes back to the repo
+            git push origin HEAD
+
+            echo "✅ REVERT COMPLETE. The bad commit has been undone."
+            
+            # 7. Fail the job so you see a Red Cross in GitHub Actions
+            exit 1
+          fi
+
+          echo "✅ PASSED: Commit contains 'mahmoud'."
