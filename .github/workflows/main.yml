@@ -1,4 +1,4 @@
-name: Enforce Policy & Auto-Revert
+name: Strict Commit Template & Auto-Revert
 
 on:
   push:
@@ -6,46 +6,112 @@ on:
       - develop
 
 permissions:
-  contents: write  # <--- CRITICAL: Allows the Action to push the revert
+  contents: write
 
 jobs:
-  enforce-and-revert:
+  validate-and-revert:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # <--- CRITICAL: We need full history to perform a revert
+          fetch-depth: 0
 
-      - name: Check Message & Auto-Revert if Needed
+      - name: Validate Template & Revert if Needed
+        id: check_msg
+        env:
+          # Pass the commit message safely as an Environment Variable
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        shell: python
         run: |
-          # 1. Capture the message (Case Insensitive Check)
-          COMMIT_MSG="${{ github.event.head_commit.message }}"
-          echo "Analyzing commit: $COMMIT_MSG"
+          import os
+          import re
+          import sys
+          import subprocess
 
-          # 2. Check if "mahmoud" is missing (grep -i = case insensitive)
-          if ! echo "$COMMIT_MSG" | grep -iq "mahmoud"; then
-            echo "❌ VIOLATION: 'mahmoud' not found in commit message."
-            echo "🚨 INITIATING AUTO-REVERT SEQUENCE..."
+          # 1. Get the message and split into lines
+          msg = os.environ.get("COMMIT_MSG", "")
+          lines = msg.strip().split('\n')
+          
+          # Remove carriage returns if any (common in Windows commits)
+          lines = [line.strip() for line in lines]
 
-            # 3. Configure Git for the Bot
-            git config --global user.name "Policy Enforcer Bot"
-            git config --global user.email "bot@noreply.github.com"
+          print(f"Analyzing {len(lines)} lines...")
+          for i, line in enumerate(lines):
+              print(f"Line {i+1}: {line}")
 
-            # 4. Revert the current HEAD
-            # --no-edit: accept the default revert message temporarily
-            git revert HEAD --no-edit
+          # --- CONFIGURATION (Regex Patterns) ---
+          REGEX_TICKET = r"^[A-Z]+-[0-9]+$"       # e.g., PROJ-123
+          REGEX_VERSION = r"^v[0-9]+\.[0-9]+$"    # e.g., v1.0
+          REGEX_TYPE = r"^(Feature|Bugfix|Refactor|Docs)$"
 
-            # 5. Amend the message to your specific requirement
-            git commit --amend -m "reverted because it's per guidelines"
+          errors = []
 
-            # 6. Push the changes back to the repo
-            git push origin HEAD
+          # --- VALIDATION LOGIC ---
+          # Check strict line count (Must have at least 8 lines)
+          if len(lines) < 8:
+              errors.append("Message is too short. Must be at least 8 lines.")
+          else:
+              # Line 1: Ticket
+              if not re.match(REGEX_TICKET, lines[0]):
+                  errors.append(f"Line 1 (Ticket): '{lines[0]}' does not match format PROJ-123")
+              
+              # Line 2: Summary (Non-empty)
+              if not lines[1]:
+                  errors.append("Line 2 (Summary): Cannot be empty")
 
-            echo "✅ REVERT COMPLETE. The bad commit has been undone."
-            
-            # 7. Fail the job so you see a Red Cross in GitHub Actions
-            exit 1
-          fi
+              # Line 3: Blank
+              if lines[2] != "":
+                  errors.append("Line 3: Must be a blank line")
 
-          echo "✅ PASSED: Commit contains 'mahmoud'."
+              # Line 4: Version
+              if not re.match(REGEX_VERSION, lines[3]):
+                  errors.append(f"Line 4 (Version): '{lines[3]}' does not match format vX.X")
+
+              # Line 5: Blank
+              if lines[4] != "":
+                  errors.append("Line 5: Must be a blank line")
+
+              # Line 6: Type
+              if not re.match(REGEX_TYPE, lines[5]):
+                  errors.append(f"Line 6 (Type): '{lines[5]}' is invalid. Allowed: Feature, Bugfix, Refactor, Docs")
+
+              # Line 7: Blank
+              if lines[6] != "":
+                  errors.append("Line 7: Must be a blank line")
+
+              # Line 8: Description (Non-empty)
+              if not lines[7]:
+                  errors.append("Line 8 (Description): Cannot be empty")
+
+          # --- DECISION ---
+          if not errors:
+              print("✅ ACCEPTED: Commit message follows the strict template.")
+              sys.exit(0)
+          
+          # --- REVERT SEQUENCE ---
+          print("\n❌ VIOLATIONS FOUND:")
+          for err in errors:
+              print(f" - {err}")
+          
+          print("\n🚨 INITIATING AUTO-REVERT...")
+
+          # Define Git Commands
+          commands = [
+              ["git", "config", "--global", "user.name", "Policy Bot"],
+              ["git", "config", "--global", "user.email", "bot@noreply.github.com"],
+              ["git", "revert", "HEAD", "--no-edit"],
+              ["git", "commit", "--amend", "-m", "reverted: commit message format violation"],
+              ["git", "push", "origin", "HEAD"]
+          ]
+
+          # Execute Revert
+          try:
+              for cmd in commands:
+                  subprocess.run(cmd, check=True)
+              print("✅ REVERT COMPLETE.")
+          except subprocess.CalledProcessError as e:
+              print(f"CRITICAL ERROR during revert: {e}")
+          
+          # Fail the job
+          sys.exit(1)
