@@ -2,7 +2,7 @@ import ctypes
 import sys
 
 # Load the library (DLL on Windows, SO on Linux)
-# to test new commit checking 2
+# to test new commit checking 4
 lib_name = './add.dll' if sys.platform.startswith('win') else './add.so'
 add_dll = ctypes.CDLL(lib_name)
 
