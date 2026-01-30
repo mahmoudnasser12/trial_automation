@@ -1,0 +1,15 @@
+name: Manual Checkout Thesis Rep
+
+on:
+  workflow_dispatch:
+
+jobs:
+  checkout-thesis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Thesis Rep (Develop)
+        uses: actions/checkout@v4
+        with:
+          repository: mahmoudnasser12/Thesis_rep_last
+          ref: develop
+          path: thesis-repo
